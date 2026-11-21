@@ -1,8 +1,13 @@
-/** Casa C&J · Google Apps Script backend
- * Vinculado al archivo de Google Sheets Home.
- * Publicar como aplicación web: Ejecutar como «Usuario que accede»,
- * Acceso: «Cualquier usuario con una cuenta de Google».
- * Compartir el Google Sheet SOLO con Claudia y Jorge como editores.
+/** Casa C&J | Backend API v2.1
+ * El frontend está exclusivamente en Vercel. NO necesita Index.html en Apps Script.
+ * Copiar este archivo completo a Código.gs y guardar.
+ * Implementar > Gestionar implementaciones > Editar > Nueva versión.
+ * Ejecutar como: Yo (propietario autorizado del Sheet).
+ * Quién tiene acceso: Cualquier usuario (incluido acceso sin iniciar sesión).
+ * Las operaciones de datos requieren BRIDGE_SECRET, definido en las propiedades
+ * de Apps Script y con el mismo valor en APPS_SCRIPT_BRIDGE_SECRET de Vercel.
+ * Propiedades opcionales para IA: OPENAI_API_KEY y OPENAI_MODEL.
+ * No ejecutar bootstrap ni borrar datos existentes para activar la conexión.
  */
 const SPREADSHEET_ID = '1Y-4sv-EbY5i-fEXEbM1NGuuz11n8bki0IjzkcmeNOck';
 const SCHEMA = {
@@ -19,7 +24,7 @@ const LABELS = {id:'ID',name:'Nombre',category:'Categoría',ingredient:'Principi
 
 // El frontend vive en Vercel. Este endpoint no publica una copia del Index.
 function doGet() {
-  return ContentService.createTextOutput('Casa C&J: backend activo');
+  return ContentService.createTextOutput('Casa C&J: backend activo | API v2.1');
 }
 
 // Unicamente la pasarela privada de Vercel puede invocar estos metodos.
