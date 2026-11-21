@@ -1,0 +1,7 @@
+{
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "google-auth-library": "^9.15.1"
+  }
+}
