@@ -12,9 +12,10 @@ const SCHEMA = {
   tasks: {sheet:'Rutinas', fields:['id','name','category','interval','last','person','notes']},
   events: {sheet:'Historial', fields:['id','date','name','person','notes']},
   shopping: {sheet:'Compras', fields:['id','name','category','bought','qty','notes']},
+  purchases: {sheet:'Compras realizadas', fields:['id','date','name','store','qtyGrams','protein100','proteinTotal','price','person','notes','photoUrl']},
   expenses: {sheet:'Gastos', fields:['id','date','category','amount','name','notes']}
 };
-const LABELS = {id:'ID',name:'Nombre',category:'Categoría',ingredient:'Principio activo',use:'Para qué sirve',expiry:'Vencimiento',qty:'Cantidad',notes:'Notas',approx:'Fecha aproximada',emoji:'Emoji',food:'Alimento actual',weight:'Peso',pet:'Gato',type:'Tipo',date:'Fecha',value:'Valor',interval:'Frecuencia días',last:'Última realización',person:'Responsable',bought:'Comprado',amount:'Importe'};
+const LABELS = {id:'ID',name:'Nombre',category:'Categoría',ingredient:'Principio activo',use:'Para qué sirve',expiry:'Vencimiento',qty:'Cantidad',notes:'Notas',approx:'Fecha aproximada',emoji:'Emoji',food:'Alimento actual',weight:'Peso',pet:'Gato',type:'Tipo',date:'Fecha',value:'Valor',interval:'Frecuencia días',last:'Última realización',person:'Responsable',bought:'Comprado',amount:'Importe',store:'Tienda',qtyGrams:'Cantidad (g)',protein100:'Proteína g/100g',proteinTotal:'Proteína total (g)',price:'Precio (S/)',photoUrl:'Foto (Drive)'};
 
 function doGet() {
   return HtmlService.createHtmlOutputFromFile('Index')
@@ -97,4 +98,17 @@ function saveState(state, expectedRevision){
     SpreadsheetApp.flush();
     return {revision:actual+1};
   }finally{lock.releaseLock();}
+}
+/** Las imágenes se guardan privadas en Drive del usuario que accede.
+ * Comparte la carpeta Casa CJ - Fotos compras con Jorge para que pueda verlas.
+ */
+function uploadPurchasePhoto(base64,mime,filename){
+ if(!/^image\/(jpeg|png|webp|heic|heif)$/.test(String(mime)))throw new Error('Formato de imagen no admitido');
+ if(String(base64).length>7*1024*1024)throw new Error('Archivo demasiado grande');
+ const folders=DriveApp.getFoldersByName('Casa CJ - Fotos compras');
+ const folder=folders.hasNext()?folders.next():DriveApp.createFolder('Casa CJ - Fotos compras');
+ const safeName=String(filename||'compra.jpg').replace(/[^\w.\-]/g,'_').slice(0,90);
+ const blob=Utilities.newBlob(Utilities.base64Decode(base64),mime,Date.now()+'_'+safeName);
+ const file=folder.createFile(blob);
+ return {url:file.getUrl()};
 }
