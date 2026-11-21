@@ -10,7 +10,7 @@ export default async function handler(req,res){
  try{
   const r=await fetch('https://api.openai.com/v1/chat/completions',{method:'POST',headers:{Authorization:'Bearer '+process.env.OPENAI_API_KEY,'Content-Type':'application/json'},body:JSON.stringify({model:process.env.OPENAI_MODEL||'gpt-4.1-mini',max_tokens:350,temperature:0,messages:[{role:'user',content:[{type:'text',text:prompt},{type:'image_url',image_url:{url:'data:image/jpeg;base64,'+base64,detail:'high'}}]}]})});
   if(!r.ok)return respond(res,502,{error:'OpenAI no pudo analizar la imagen ('+r.status+')'});
-  const json=await r.json();const raw=String(json.choices?.[0]?.message?.content||'').trim().replace(/^``(?:json)?\s*/i,'').replace(/\s*``$/,'');
+  const json=await r.json();const raw=String(json.choices?.[0]?.message?.content||'').trim().replace(/^`{3}(?:json)?\s*/i,'').replace(/\s*`{3}$/,'');
   let obj;try{obj=JSON.parse(raw)}catch{return respond(res,502,{error:'Respuesta de IA no válida; vuelve a intentar'})}
   const num=(v,max)=>typeof v==='number'&&Number.isFinite(v)&&v>=0&&v<=max?v:null;
   const product={name:typeof obj.name==='string'?obj.name.slice(0,150):null,qtyGrams:num(obj.qtyGrams,100000),protein100:num(obj.protein100,100),price:num(obj.price,100000),estimatedFields:Array.isArray(obj.estimatedFields)?obj.estimatedFields.filter(x=>['name','qtyGrams','protein100','price'].includes(x)):[]};
