@@ -1,20 +1,13 @@
-import { timingSafeEqual, createHash } from 'node:crypto';
-
-function equal(a,b) {
-  const x=createHash('sha256').update(String(a||'')).digest();
-  const y=createHash('sha256').update(String(b||'')).digest();
-  return timingSafeEqual(x,y);
-}
+import {session} from '../lib/session.js';
 export default async function handler(req,res) {
   res.setHeader('Cache-Control','no-store');
   if(req.method!=='POST')return res.status(405).json({error:'Metodo no permitido'});
-  const password=process.env.HOUSEHOLD_PASSWORD;
   const url=process.env.APPS_SCRIPT_URL;
   const secret=process.env.APPS_SCRIPT_BRIDGE_SECRET;
-  if(!password||password.length<12||!secret||secret.length<32||!url)
+  if(!secret||secret.length<32||!url)
     return res.status(503).json({error:'Falta configurar la conexion privada con Apps Script en Vercel'});
-  if(!equal(req.headers['x-household-password'],password))
-    return res.status(401).json({error:'Contraseña incorrecta'});
+  if(!session(req))
+    return res.status(401).json({error:'Sesión no autorizada'});
   const {method,args}=req.body||{};
   const allowed=['getState','saveState','analyzePurchasePhoto','uploadPurchasePhoto'];
   if(!allowed.includes(method)||!Array.isArray(args))
