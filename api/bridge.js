@@ -9,7 +9,7 @@ export default async function handler(req,res) {
   if(!session(req))
     return res.status(401).json({error:'Sesión no autorizada'});
   const {method,args}=req.body||{};
-  const allowed=['getState','saveState','analyzePurchasePhoto','uploadPurchasePhoto'];
+  const allowed=['getState','saveState','analyzePurchasePhoto','uploadPurchasePhoto','transcribeShoppingVoice','interpretShoppingVoice'];
   if(!allowed.includes(method)||!Array.isArray(args))
     return res.status(400).json({error:'Operacion no permitida'});
   if(!/^https:\/\/script\.google\.com\/macros\/s\/[a-zA-Z0-9_-]+\/exec$/.test(url))
