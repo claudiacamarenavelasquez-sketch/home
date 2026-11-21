@@ -45,10 +45,46 @@ function purchaseForm(id){
  f('Proteína (g por cada 100 g)','protein100',v.protein100||'','number','min="0" max="100" step="0.1"')+
  f('Precio (S/)','price',v.price||'','number','min="0" step="0.01"')+
  f('Comprado por','person',v.person||'Claudia')+
- '<label class="full">Foto del producto o etiqueta<input name="photo" type="file" accept="image/*" capture="environment"></label>'+
+ '<label class="full">Foto del producto o etiqueta<input name="photo" type="file" accept="image/*" capture="environment" onchange="previewPurchasePhoto(this)"></label>'+ '<div class="full" id="purchaseAI" style="padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--cream)"><button class="btn outline" type="button" onclick="scanPurchasePhoto()">✨ Identificar con IA</button><p class="muted" style="margin:7px 0 0">La IA propondrá los datos. Revísalos antes de guardar. Coste por uso de API.</p></div>'+
  area('Notas / presentación / marca', 'notes',v.notes||''),
  "savePurchase('"+(id||'')+"')");
 }
+
+async function compactPurchaseImage(file){
+ return new Promise((resolve,reject)=>{
+  const img=new Image(),url=URL.createObjectURL(file);
+  img.onload=()=>{try{
+   const scale=Math.min(1,1600/Math.max(img.naturalWidth,img.naturalHeight));
+   const canvas=document.createElement('canvas');canvas.width=Math.round(img.naturalWidth*scale);canvas.height=Math.round(img.naturalHeight*scale);
+   canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);
+   URL.revokeObjectURL(url);resolve(canvas.toDataURL('image/jpeg',.78).split(',')[1]);
+  }catch(e){URL.revokeObjectURL(url);reject(e)}};
+  img.onerror=()=>{URL.revokeObjectURL(url);reject(Error('No se pudo abrir la imagen. Prueba JPG o PNG.'))};img.src=url;
+ });
+}
+function previewPurchasePhoto(input){
+ const box=document.getElementById('purchaseAI');if(!box)return;
+ const file=input.files?.[0];if(file)box.querySelector('p').textContent='Imagen seleccionada: '+file.name+'. Pulsa Identificar con IA.';
+}
+async function scanPurchasePhoto(){
+ const frm=document.getElementById('entryform'),file=frm?.elements.photo.files?.[0],box=document.getElementById('purchaseAI');
+ if(!file){alert('Primero toma o selecciona una foto del producto o de su etiqueta.');return}
+ if(!cloud){alert('El escaneo automático solo funciona en la web publicada con Google Apps Script.');return}
+ const btn=box.querySelector('button');btn.disabled=true;btn.textContent='Analizando imagen…';
+ try{
+  const image=await compactPurchaseImage(file);
+  const res=await runRemote('analyzePurchasePhoto',image);
+  const v=res.product||{};
+  for(const [key,value] of Object.entries({name:v.name,qtyGrams:v.qtyGrams,protein100:v.protein100,price:v.price})){
+   if(value!==null&&value!==undefined&&value!==''&&frm.elements[key])frm.elements[key].value=value;
+  }
+  const inferred=(v.estimatedFields||[]).join(', ');
+  box.querySelector('p').textContent=(res.message||'Revisa los datos detectados antes de guardar.')+(inferred?' Estimaciones: '+inferred+'.':'')+' Los campos sin evidencia quedan vacíos.';
+  btn.textContent='↻ Volver a analizar';
+ }catch(e){box.querySelector('p').textContent='No se pudo analizar: '+(e.message||e);btn.textContent='Reintentar escaneo'}
+ finally{btn.disabled=false}
+}
+
 async function savePurchase(id){
  const frm=document.getElementById('entryform'),file=frm.elements.photo.files[0],d=data();
  let photoUrl=(state.purchases||[]).find(x=>x.id===id)?.photoUrl||'';
@@ -59,8 +95,8 @@ async function savePurchase(id){
    if(file.size>5*1024*1024){alert('Foto demasiado grande. Máximo 5 MB.');return;}
    const btn=frm.querySelector('[type="submit"]');btn.disabled=true;btn.textContent='Subiendo foto…';
    try{
-     const base64=await new Promise((ok,no)=>{const reader=new FileReader;reader.onload=()=>ok(String(reader.result).split(',')[1]);reader.onerror=no;reader.readAsDataURL(file)});
-     const res=await runRemote('uploadPurchasePhoto',base64,file.type,file.name);
+     const base64=await compactPurchaseImage(file);
+     const res=await runRemote('uploadPurchasePhoto',base64,'image/jpeg',file.name.replace(/\.[^.]+$/,'.jpg'));
      photoUrl=res.url;
    }catch(err){btn.disabled=false;btn.textContent='Guardar registro';alert('No se pudo subir la foto: '+(err.message||err));return;}
  }
