@@ -7,9 +7,38 @@ const shoppingSeed=[{'id': 's0', 'name': 'Harpie', 'category': 'Limpieza · Bañ
 const defaultState=()=>({meds:seedM.map((m,i)=>({id:'m'+i,name:m[0],category:m[1],ingredient:m[2],use:m[3],expiry:m[4],qty:m[5],notes:m[6],approx:m[6]?.includes('Mes no indicado')})),pets:[{id:'hera',name:'Hera',emoji:'🐈',food:'Por registrar',weight:'',notes:'Gatita · registrar información veterinaria'},{id:'ramses',name:'Ramsés',emoji:'🐈‍⬛',food:'Por registrar',weight:'',notes:'Gatito · registrar información veterinaria'}],petlogs:[],tasks:taskSeed.map((t,i)=>({id:'t'+i,name:t[0],category:t[1],interval:+t[2],last:t[3],person:t[4],notes:''})),events:[],expenses:[],purchases:[],shopping:shoppingSeed.map(x=>({...x}))});
 let state;try{state=JSON.parse(localStorage.getItem('casaCJ_v1'))||defaultState()}catch{state=defaultState()}if(!Array.isArray(state.shopping))state.shopping=shoppingSeed.map(x=>({...x}));if(!Array.isArray(state.purchases))state.purchases=[];let remoteRevision=0, syncReady=false, saveQueue=Promise.resolve();
 const APPS_SCRIPT_WEB_APP_URL='https://script.google.com/macros/s/AKfycby_Jv9DCn6o04RhaHB3cBGuN3i9zSf0mKN2_neugMNsRV88NG_1FsVpnotN4LVdh04mrw/exec';
-const cloud=!!(window.google&&google.script&&google.script.run);
+const cloud=true; // Backend único: funciones privadas de Vercel.
 
-function runRemote(method,...args){return new Promise((resolve,reject)=>google.script.run.withSuccessHandler(resolve).withFailureHandler(reject)[method](...args))}
+async function runRemote(method,...args){
+ let url='/api/state',options={credentials:'same-origin',cache:'no-store'};
+ if(method==='saveState'){options.method='POST';options.headers={'Content-Type':'application/json'};options.body=JSON.stringify({state:args[0],expectedRevision:args[1]});}
+ else if(method==='analyzePurchasePhoto'){url='/api/scan';options.method='POST';options.headers={'Content-Type':'application/json'};options.body=JSON.stringify({base64:args[0]});}
+ else if(!['bootstrap','getState'].includes(method))throw Error('Función no disponible: '+method);
+ const response=await fetch(url,options),result=await response.json().catch(()=>({}));
+ if(!response.ok)throw Error(result.error||'Error del servidor '+response.status);
+ return result;
+}
+async function ensureHouseholdSession(){
+ let status;
+ try{const r=await fetch('/api/auth',{credentials:'same-origin',cache:'no-store'});status=await r.json();}catch{status={configured:false}}
+ if(status.authenticated)return;
+ const overlay=document.createElement('div');overlay.id='houseLogin';overlay.style.cssText='position:fixed;inset:0;background:#f5f1e9;z-index:99999;display:grid;place-items:center;padding:20px';
+ overlay.innerHTML='<form id="houseLoginForm" style="background:white;max-width:390px;width:100%;padding:32px;border-radius:20px;box-shadow:0 14px 48px #26352b26"><div style="font-size:38px;margin-bottom:12px">🏡</div><h2 style="margin:0 0 8px">Casa C&J</h2><p style="color:#56665c;line-height:1.5">Acceso privado al inventario de casa, compras y mascotas.</p><label style="display:block;margin:16px 0">Contraseña de casa<input name="password" type="password" autocomplete="current-password" required style="width:100%;margin-top:8px;padding:12px;border:1px solid #bbc8c0;border-radius:9px"></label><button type="submit" style="background:#214a40;color:white;border:0;border-radius:10px;padding:12px 18px;cursor:pointer;width:100%">Entrar</button><p id="houseLoginError" role="alert" style="color:#a03b37;font-size:13px"></p></form>';
+ document.body.appendChild(overlay);
+ if(!status.configured)overlay.querySelector('#houseLoginError').textContent='El servidor todavía necesita credenciales en Vercel. Configúralas antes de ingresar.';
+ return new Promise(resolve=>{
+  overlay.querySelector('form').onsubmit=async e=>{
+   e.preventDefault();const form=e.currentTarget,btn=form.querySelector('button'),error=form.querySelector('#houseLoginError');
+   btn.disabled=true;error.textContent='';
+   try{
+    const response=await fetch('/api/auth',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:form.elements.password.value})});
+    const data=await response.json();
+    if(!response.ok)throw Error(data.error||'No se pudo iniciar sesión');
+    overlay.remove();resolve();
+   }catch(err){error.textContent=err.message;btn.disabled=false;}
+  };
+ });
+}
 function showSync(msg){let e=document.getElementById('syncIndicator');if(e)e.textContent=msg;}
 function save(){localStorage.setItem('casaCJ_v1',JSON.stringify(state));if(!cloud||!syncReady)return;
   const snapshot=JSON.parse(JSON.stringify(state));
@@ -20,9 +49,9 @@ function save(){localStorage.setItem('casaCJ_v1',JSON.stringify(state));if(!clou
     remoteRevision=result.revision;showSync('✓ Sincronizado');
   }).catch(err=>{showSync('⚠ Error al guardar');alert('No se pudo sincronizar con Google Sheets: '+(err.message||err))});
 }
-async function syncInit(){if(!cloud){showSync('Modo local · sin sincronización');return;}
+async function syncInit(){await ensureHouseholdSession();
   showSync('Conectando con Google Sheets…');try{
-  const result=await runRemote('bootstrap',state);state={...defaultState(),...result.state};remoteRevision=result.revision;
+  const result=await runRemote('getState');state={...defaultState(),...result.state};remoteRevision=result.revision;
   localStorage.setItem('casaCJ_v1',JSON.stringify(state));syncReady=true;showSync('✓ Conectado a Sheets');render();
   setInterval(async()=>{if(!syncReady)return;await saveQueue;try{const remote=await runRemote('getState');if(remote.revision>remoteRevision){state={...defaultState(),...remote.state};remoteRevision=remote.revision;localStorage.setItem('casaCJ_v1',JSON.stringify(state));render();showSync('✓ Actualizado desde Sheets')}}catch(err){showSync('⚠ Sin conexión')}},45000);
   }catch(err){showSync('⚠ No conectado');alert('Error de conexión con Google Sheets: '+(err.message||err));}
@@ -40,7 +69,7 @@ function purchasesPanel(){
 }
 function purchaseForm(id){
  const v=(state.purchases||[]).find(x=>x.id===id)||{};
- modal(id?'Editar compra':'Compras hoy · Registrar producto','Puedes fotografiar la etiqueta, registrar gramos y anotar proteína por cada 100 g. La foto se guarda en Drive solo si estás en la web de Apps Script.',
+ modal(id?'Editar compra':'Compras hoy · Registrar producto','Puedes fotografiar la etiqueta, registrar gramos y anotar proteína por cada 100 g. La IA puede leer la foto, pero todavía no se almacena la imagen original.',
  f('Fecha de compra','date',v.date||today(),'date','required')+f('Supermercado','store',v.store||'')+
  f('Producto','name',v.name||'','text','required',true)+
  f('Peso comprado (gramos)','qtyGrams',v.qtyGrams||'','number','min="0" step="0.1"')+
@@ -71,7 +100,7 @@ function previewPurchasePhoto(input){
 async function scanPurchasePhoto(){
  const frm=document.getElementById('entryform'),file=frm?.elements.photo.files?.[0],box=document.getElementById('purchaseAI');
  if(!file){alert('Primero toma o selecciona una foto del producto o de su etiqueta.');return}
- if(!cloud){alert('El escaneo automático solo funciona en la web publicada con Google Apps Script.');return}
+ 
  const btn=box.querySelector('button');btn.disabled=true;btn.textContent='Analizando imagen…';
  try{
   const image=await compactPurchaseImage(file);
@@ -92,16 +121,8 @@ async function savePurchase(id){
  let photoUrl=(state.purchases||[]).find(x=>x.id===id)?.photoUrl||'';
  const grams=Number(d.qtyGrams),per100=Number(d.protein100);
  if(d.qtyGrams!==''&&d.protein100!==''&&per100>100){alert('La proteína por 100 g no puede superar 100 g');return;}
- if(file){
-   if(!cloud){alert('Para guardar fotos debes abrir la aplicación publicada con Google Apps Script. Puedes guardar el registro sin foto.');return;}
-   if(file.size>5*1024*1024){alert('Foto demasiado grande. Máximo 5 MB.');return;}
-   const btn=frm.querySelector('[type="submit"]');btn.disabled=true;btn.textContent='Subiendo foto…';
-   try{
-     const base64=await compactPurchaseImage(file);
-     const res=await runRemote('uploadPurchasePhoto',base64,'image/jpeg',file.name.replace(/\.[^.]+$/,'.jpg'));
-     photoUrl=res.url;
-   }catch(err){btn.disabled=false;btn.textContent='Guardar registro';alert('No se pudo subir la foto: '+(err.message||err));return;}
- }
+ if(file){alert('Se guardarán los datos de la compra. La fotografía todavía no se almacena en esta versión de Vercel.');}
+
  const item={id:id||uid(),date:d.date,name:d.name,store:d.store,qtyGrams:d.qtyGrams,protein100:d.protein100,proteinTotal:d.qtyGrams!==''&&d.protein100!==''?String(Math.round(grams*per100/100*10)/10):'',price:d.price,person:d.person,notes:d.notes,photoUrl};
  if(!Array.isArray(state.purchases))state.purchases=[];
  if(id)state.purchases=state.purchases.map(x=>x.id===id?item:x);else state.purchases.push(item);
@@ -121,5 +142,5 @@ function petForm(id){let p=state.pets.find(v=>v.id===id);modal('Ficha de '+p.nam
 function petLogForm(pet='Hera'){modal('Nuevo registro de gatos','Controles, síntomas, vacunas, alimentación y visitas',sel('¿De quién?','pet',state.pets.map(p=>p.name),pet)+sel('Tipo de registro','type',['Peso','Vómito','Veterinario','Vacuna','Desparasitación','Alimentación','Medicamento','Síntoma','Otro'])+f('Fecha','date',today(),'date','required')+f('Valor / vacuna / comida / kg','value','','text','',true)+area('Detalles / observaciones','notes'),`savePetLog()`)}function savePetLog(){state.petlogs.push({...data(),id:uid()});save();closeModal();render()}
 function taskForm(id){let t=state.tasks.find(v=>v.id===id)||{};modal(id?'Editar rutina':'Nueva rutina','Frecuencia sugerida en días, ajustable según tu hogar',f('Actividad','name',t.name,'text','required',true)+sel('Área','category',['Dormitorio','Plantas','Lavandería','Mantenimiento','Compras','Gatos','Salud','Cocina','Baño','Otro'],t.category)+f('Repetir cada (días)','interval',t.interval||7,'number','min="1" required')+f('Última vez realizada','last',t.last,'date')+f('Responsable','person',t.person||'Jorge y Claudia')+area('Notas','notes',t.notes),`saveTask('${id||''}')`)}function saveTask(id){let x=data();x.interval=Number(x.interval);x.id=id||uid();if(id)state.tasks=state.tasks.map(t=>t.id===id?x:t);else state.tasks.push(x);save();closeModal();render()}function complete(id){let t=state.tasks.find(v=>v.id===id);t.last=today();state.events.push({id:uid(),date:today(),name:t.name,person:t.person,notes:'Rutina completada · '+t.category});save();render()}
 function eventForm(){modal('Registrar actividad','Para compras, mantenimientos y cualquier acontecimiento',f('Actividad','name','','text','required',true)+f('Fecha','date',today(),'date','required')+f('Responsable','person','Jorge y Claudia')+area('Detalle (proveedor, monto, observaciones)','notes'),`saveEvent()`)}function saveEvent(){state.events.push({...data(),id:uid()});save();closeModal();render()}function del(collection,id){if(!confirm('¿Eliminar este registro?'))return;state[collection]=state[collection].filter(v=>v.id!==id);save();render()}
-function quick(){modal('¿Qué vas a registrar?','Selecciona el módulo que quieras completar',`<div class="full" style="display:grid;gap:9px"><button class="btn outline" type="button" onclick="closeModal();medForm()">💊 Medicamento</button><button class="btn outline" type="button" onclick="closeModal();petLogForm()">🐾 Evento de Hera o Ramsés</button><button class="btn outline" type="button" onclick="closeModal();eventForm()">🏡 Actividad de casa</button><button class="btn outline" type="button" onclick="closeModal();taskForm()">🧹 Nueva rutina</button><button class="btn outline" type="button" onclick="closeModal();shopForm()">🛒 Producto de compras</button><button class="btn outline" type="button" onclick="closeModal();purchaseForm()">🧺 Compra con gramos y proteína</button></div>`,`closeModal()`)}function exportData(){const blob=new Blob([JSON.stringify({...state,version:1,exported:today()},null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='Casa-CJ-respaldo-'+today()+'.json';a.click();URL.revokeObjectURL(url)}function importData(input){let file=input.files[0];if(!file)return;const reader=new FileReader;reader.onload=()=>{try{let o=JSON.parse(reader.result);if(!['meds','pets','petlogs','tasks','events'].every(k=>Array.isArray(o[k])))throw Error('Formato incompatible');if(!confirm('Esto reemplazará los datos actuales de este navegador. ¿Continuar?'))return;state={...defaultState(),...o};if(!Array.isArray(state.shopping))state.shopping=shoppingSeed.map(x=>({...x}));save();render();alert('Respaldo importado')}catch(e){alert('No se pudo importar: '+e.message)}};reader.readAsText(file)}function resetData(){if(confirm('¿Restablecer y borrar cambios, registros y eventos guardados en este dispositivo?')){state=defaultState();save();render()}}render();syncInit();
+function quick(){modal('¿Qué vas a registrar?','Selecciona el módulo que quieras completar',`<div class="full" style="display:grid;gap:9px"><button class="btn outline" type="button" onclick="closeModal();medForm()">💊 Medicamento</button><button class="btn outline" type="button" onclick="closeModal();petLogForm()">🐾 Evento de Hera o Ramsés</button><button class="btn outline" type="button" onclick="closeModal();eventForm()">🏡 Actividad de casa</button><button class="btn outline" type="button" onclick="closeModal();taskForm()">🧹 Nueva rutina</button><button class="btn outline" type="button" onclick="closeModal();shopForm()">🛒 Producto de compras</button><button class="btn outline" type="button" onclick="closeModal();purchaseForm()">🧺 Compra con gramos y proteína</button></div>`,`closeModal()`)}function exportData(){const blob=new Blob([JSON.stringify({...state,version:1,exported:today()},null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='Casa-CJ-respaldo-'+today()+'.json';a.click();URL.revokeObjectURL(url)}function importData(input){let file=input.files[0];if(!file)return;const reader=new FileReader;reader.onload=()=>{try{let o=JSON.parse(reader.result);if(!['meds','pets','petlogs','tasks','events'].every(k=>Array.isArray(o[k])))throw Error('Formato incompatible');if(!confirm('Esto reemplazará los datos actuales de este navegador. ¿Continuar?'))return;state={...defaultState(),...o};if(!Array.isArray(state.shopping))state.shopping=shoppingSeed.map(x=>({...x}));save();render();alert('Respaldo importado')}catch(e){alert('No se pudo importar: '+e.message)}};reader.readAsText(file)}function resetData(){if(confirm('¿Borrar solo la copia local de este dispositivo? Los datos de Google Sheets permanecerán intactos.')){localStorage.removeItem('casaCJ_v1');location.reload()}}syncInit();
 </script></body></html>

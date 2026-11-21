@@ -1,0 +1,10 @@
+import {readFileSync} from 'node:fs';
+import {Script} from 'node:vm';
+const html=readFileSync('Index.html','utf8');
+const match=html.match(/<script>([\s\S]*?)<\/script>/);
+if(!match)throw Error('No se encontró el script principal');
+new Script(match[1],{filename:'Index.html'});
+if(!html.includes("fetch('/api/auth'")||!html.includes("'/api/state'"))throw Error('Falta conexión Vercel');
+if(html.includes('google.script.run'))throw Error('Queda dependencia del Apps Script en el frontend');
+if(html.includes('const seedM=[['))throw Error('No publicar medicamentos privados en GitHub');
+console.log('✓ HTML y enlaces a Vercel validados');

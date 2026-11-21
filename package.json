@@ -1,0 +1,9 @@
+{
+  "name": "casa-cj",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "check": "node --check api/auth.js && node --check api/state.js && node --check api/scan.js && node --check lib/server.js"
+  }
+}
