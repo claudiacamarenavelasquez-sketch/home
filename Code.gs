@@ -17,10 +17,33 @@ const SCHEMA = {
 };
 const LABELS = {id:'ID',name:'Nombre',category:'Categoría',ingredient:'Principio activo',use:'Para qué sirve',expiry:'Vencimiento',qty:'Cantidad',notes:'Notas',approx:'Fecha aproximada',emoji:'Emoji',food:'Alimento actual',weight:'Peso',pet:'Gato',type:'Tipo',date:'Fecha',value:'Valor',interval:'Frecuencia días',last:'Última realización',person:'Responsable',bought:'Comprado',amount:'Importe',store:'Tienda',qtyGrams:'Cantidad (g)',protein100:'Proteína g/100g',proteinTotal:'Proteína total (g)',price:'Precio (S/)',photoUrl:'Foto (Drive)'};
 
+// El frontend vive en Vercel. Este endpoint no publica una copia del Index.
 function doGet() {
-  return HtmlService.createHtmlOutputFromFile('Index')
-    .setTitle('Casa C&J | Centro de control')
-    .addMetaTag('viewport','width=device-width, initial-scale=1');
+  return ContentService.createTextOutput('Casa C&J: backend activo');
+}
+
+// Unicamente la pasarela privada de Vercel puede invocar estos metodos.
+// En Apps Script: Configuracion del proyecto > Propiedades de secuencia
+// de comandos > BRIDGE_SECRET (cadena aleatoria larga).
+function doPost(e) {
+  try {
+    const body=JSON.parse(e.postData.contents||'{}');
+    const secret=PropertiesService.getScriptProperties().getProperty('BRIDGE_SECRET');
+    if(!secret||secret.length<32||body.secret!==secret)throw new Error('Acceso no autorizado');
+    const args=Array.isArray(body.args)?body.args:[];
+    const methods={
+      getState:()=>getState(),
+      saveState:()=>saveState(args[0],args[1]),
+      analyzePurchasePhoto:()=>analyzePurchasePhoto(args[0]),
+      uploadPurchasePhoto:()=>uploadPurchasePhoto(args[0],args[1],args[2])
+    };
+    if(!Object.prototype.hasOwnProperty.call(methods,body.method))throw new Error('Metodo no permitido');
+    return ContentService.createTextOutput(JSON.stringify({ok:true,result:methods[body.method]()}))
+      .setMimeType(ContentService.MimeType.JSON);
+  }catch(err){
+    return ContentService.createTextOutput(JSON.stringify({ok:false,error:String(err.message||err)}))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
 }
 function setup() {
   const ss=SpreadsheetApp.openById(SPREADSHEET_ID);
